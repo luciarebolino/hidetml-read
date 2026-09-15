@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>HTML</title>
+  <script src="./lib/three.min.js"></script>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; width: 100%; height: 100%; overflow: hidden;
+      touch-action: none; user-select: none; -webkit-user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+      background: #c4c8ce;   /* flat silver colour-block */
+    }
+    #stage {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      perspective: 1000px; perspective-origin: 50% 50%;
+    }
+    #world { transform-style: preserve-3d; }
+    /* HINGE = the folder's OPENING edge, pinned on the CENTRE axis of the screen, full height.
+       The whole folder rotates around this centre line, so the SPINE (far/right edge)
+       swings back into depth as you tilt. */
+    /* Narrow 3D folder (unchanged tilt): two covers joined at the far SPINE (right edge),
+       splayed a little at the near opening. At rest the folder is near edge-on → a slim bar;
+       tilt turns it to reveal a face. On OPEN each cover swings around the spine like a book:
+       the dark cover (edge 1) out to the RIGHT border, the light cover (edge 2) to the LEFT. */
+    #folder {
+      position: relative; width: 0; height: 0; transform-style: preserve-3d;
+      transform-origin: 0px 50%;   /* hinge on the screen's centre axis */
+    }
+    .cover {
+      position: absolute; left: 0; top: -1200px; width: 232px; height: 2400px;
+      transform-origin: right center;   /* pivot at the SPINE (far edge) → covers meet there */
+      backface-visibility: visible; transform-style: preserve-3d;
+      border-radius: 4px 14px 14px 4px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.45);
+    }
+    .back {    /* edge 1 — darker, sits on the right, swings out to the RIGHT border */
+      transform: rotateY(4.5deg);
+      background: linear-gradient(100deg, #4482d3 0%, #4d8bd8 45%, #5aa0ea 100%);
+    }
+    .front {   /* edge 2 — lighter, sits on the left, swings out to the LEFT border */
+      transform: rotateY(-4.5deg);
+      background:
+        linear-gradient(150deg, rgba(255,255,255,0.4), rgba(255,255,255,0) 44%),
+        linear-gradient(100deg, #9fccf8 0%, #7fbaf4 52%, #67a9ef 100%);
+    }
+    /* titles ride just off the spine edge; HTML on the front face, full title on the back
+       face (rotateY 180, backface-hidden) → tilt swaps which one shows */
+    .spine {
+      position: absolute; left: 244px; top: 0; margin: 0;
+      writing-mode: vertical-rl; white-space: nowrap;
+      color: #fff;
+      text-shadow: 0 0 3px rgba(0,0,0,0.45), 0 1px 2px rgba(0,0,0,0.35), 0 0 9px rgba(0,0,0,0.25);
+      backface-visibility: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+      font-weight: 700;
+    }
+    .title-h { transform: translateY(-50%) rotate(180deg); font-size: 27px; letter-spacing: 3px; }
+    .title-f { transform: translateY(-50%) rotateY(180deg); font-size: 30px; letter-spacing: 1px; }
+    /* PAPER: a few seconds after the book is open, each cover fades from blue into a book
+       page — left page = background silver, right page = a touch darker — with a gutter
+       shadow near the centre spine, like reading inside a book. */
+    .cover .page {
+      position: absolute; inset: 0; border-radius: inherit;
+      opacity: 0; transition: opacity 1.2s ease;
+    }
+    .front .page {   /* left page → same silver as the background */
+      background: linear-gradient(to right, rgba(40,44,54,0) 72%, rgba(40,44,54,0.20)), #c4c8ce;
+    }
+    .back .page {    /* right page → slightly darker silver */
+      background: linear-gradient(to right, rgba(40,44,54,0) 72%, rgba(40,44,54,0.20)), #b4b8bf;
+    }
+    #folder.paged .page { opacity: 1; }
+
+    /* the WebGL orb canvas (exact Phase-1 sphere) sits above the folder */
+    #orbcanvas { position: fixed; inset: 0; pointer-events: none; z-index: 50; }
+
+    /* ---- reading page: fades in AFTER the folder is opened ---- */
+    #veil { display: none; }   /* no dark fade — the open folder's grey IS the page */
+    /* full-screen reading backdrop (fills edge-to-edge; two pages meeting at a centre gutter) */
+    #pagebg {
+      position: fixed; inset: 0; z-index: 38; opacity: 0; pointer-events: none; transition: opacity 1.2s ease;
+      background:
+        linear-gradient(to right, rgba(40,44,54,0) 46%, rgba(40,44,54,0.15) 50%, rgba(40,44,54,0) 54%),
+        linear-gradient(to right, #c4c8ce 0%, #c4c8ce 50%, #b4b8bf 50%, #b4b8bf 100%);
+    }
+    #pagebg.on { opacity: 1; }
+    #reader {
+      position: fixed; inset: 0; z-index: 41; opacity: 0; pointer-events: none;
+      display: flex; flex-direction: column;
+      padding: calc(env(safe-area-inset-top) + 22px) 28px calc(env(safe-area-inset-bottom) + 20px) 28px;
+      color: #1c1d21; font-family: "Times New Roman", Times, Georgia, serif;   /* dark ink on silver */
+      font-size: 20px; line-height: 1.2; letter-spacing: 0.1px;   /* auto-shrunk by fitReader() to fit */
+      text-shadow: 0 0 1px rgba(0,0,0,0.5), 0 0 5px rgba(0,0,0,0.15);   /* subtle black glow → heavier, richer */
+      transition: opacity 1.2s ease;
+    }
+    #reader.on { opacity: 1; pointer-events: auto; }
+    #reader p { margin: 0 0 0.82em 0; }
+    #reader .title { margin: 0 0 0.9em 0; }
+    #reader .link { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+    #reader .spacer { flex: 1 1 auto; min-height: 6px; }
+    #reader .begin { margin-top: auto; display: flex; justify-content: space-between; align-items: baseline; }   /* Ready? left, Let's Begin right — like @h | hide */
+    #reader .ready { margin: 0; }
+    #beginBtn {
+      display: inline-block; margin: 0; padding: 4px 0 0 0; background: none; border: none;
+      color: inherit; font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+    }
+    #beginBtn.fired { opacity: 0.4; }
+    /* ---- Phase-H story: fragments reveal one per tap, newest at the bottom ---- */
+    #story {
+      position: fixed; inset: 0; z-index: 42; opacity: 0; pointer-events: none;
+      display: flex; flex-direction: column; justify-content: flex-end;
+      padding: calc(env(safe-area-inset-top) + 40px) 32px calc(env(safe-area-inset-bottom) + 78px) 32px;
+      color: #1c1d21; font-family: "Times New Roman", Times, Georgia, serif;
+      font-size: clamp(16px, 4.9vw, 25px); line-height: 1.2; letter-spacing: 0.1px;
+      text-shadow: 0 0 1px rgba(0,0,0,0.5), 0 0 5px rgba(0,0,0,0.15);
+      overflow: hidden; transition: opacity 0.8s ease;
+    }
+    #story.on { opacity: 1; pointer-events: auto; }
+    #story p {
+      margin: 0 0 0.55em 0; opacity: 0;
+      transition: opacity 2.2s ease-in-out;   /* slow, smooth fade-in (paced with the portals) */
+    }
+    #story p.show { opacity: 1; }
+    /* ---- chapter footer: @h | hide  (spells Hide Through Model Lies across H/T/M/L) ---- */
+    #chapterbar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 55; pointer-events: none;
+      display: none; justify-content: space-between; align-items: baseline;
+      padding: 0 32px calc(env(safe-area-inset-bottom) + 26px) 32px;
+      color: #1c1d21; font-family: "Times New Roman", Times, Georgia, serif;
+      font-size: clamp(16px, 4.7vw, 24px); letter-spacing: 0.1px;
+      text-shadow: 0 0 1px rgba(0,0,0,0.5), 0 0 5px rgba(0,0,0,0.15);
+    }
+    #chapterbar.on { display: flex; }
+    #chapRight { pointer-events: auto; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+    /* full-screen tap layer during the story: it's a LABEL for the haptic switch, so every
+       genuine tap toggles the switch (fires the iOS 17.4+ system haptic) and advances one line. */
+    #tapzone { position: fixed; inset: 0; z-index: 44; display: none; background: transparent; touch-action: none; }
+    #tapzone.on { display: block; }
+    #hswitch { position: fixed; right: 4px; bottom: 4px; width: 1px; height: 1px; margin: 0;
+      opacity: 0.01; pointer-events: none; z-index: 1; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <div id="world">
+      <div id="folder">
+        <div class="cover back"><div class="page"></div></div>
+        <div class="cover front"><div class="page"></div></div>
+        <div class="spine title-h" id="spineH">HTML</div>
+        <div class="spine title-f" id="spineF">Hide Through Model Lies</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="veil"></div>
+  <div id="pagebg"></div>
+  <div id="reader">
+    <p class="title">HTML: Hide Through Model Lies</p>
+    <p>Using the internet as a narrative architectural medium, built through interfaces and software that continuously construct perception and reality, this experiment questions how computational realism reshapes our understanding of the world. A test in spatializing information through the web as a dimensionless yet deep and branched site, exploring the architectural and computational dimensions of on-offline lecturing as a performative artistic medium, where the desired outputs of technologies that intuitively respond to our interactions question not what we see when we look at our screens, but what our screens hide from us.</p>
+    <p>All references and credits can be found on my <a class="link" href="https://www.are.na/minus-one/lucia-rebolino-rk7uxnhtcsm" target="_blank" rel="noopener">Are.na channel</a>.</p>
+    <p>To navigate the research means breaking the sense of familiarity with the platforms we occupy. Four chapters&mdash;H, T, M, and L&mdash;must be processed. Within each, an exercise in restraint through UI direction determines the conditions of flow.</p>
+    <div class="spacer"></div>
+    <div class="begin">
+      <p class="ready">Ready?</p>
+      <button id="beginBtn">Let&rsquo;s Begin</button>
+    </div>
+  </div>
+  <div id="story"></div>
+  <div id="chapterbar"><span id="chapLeft">@h</span><span id="chapRight">hide</span></div>
+  <div id="tapzone"></div>
+
+  <script>
+    var folder = document.getElementById('folder');
+    var backCover = document.querySelector('.back');
+    var frontCover = document.querySelector('.front');
+    var spineH = document.getElementById('spineH');
+    var spineF = document.getElementById('spineF');
+    var params = new URLSearchParams(location.search);
+    var fixed = params.has('a');
+    function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+
+    // ---- reading page (fades in after the folder opens) + phase messaging ----
+    var veil = document.getElementById('veil');
+    var reader = document.getElementById('reader');
+    // Auto-shrink the intro font so the FULL text fits the screen (no scroll), whatever its length.
+    function fitReader() {
+      if (!reader) return;
+      var fs = 21, guard = 0;
+      reader.style.fontSize = fs + 'px';
+      while (reader.scrollHeight > reader.clientHeight + 1 && fs > 11 && guard < 90) { fs -= 0.5; reader.style.fontSize = fs + 'px'; guard++; }
+    }
+    window.addEventListener('resize', fitReader);
+    window.addEventListener('load', fitReader);
+    setTimeout(fitReader, 0);
+
+    // Installation reset: if nobody touches the phone for a while, reload back to the folder start
+    // (mirrors the screen going into its attract loop). Any touch restarts the timer.
+    var phoneIdleTimer;
+    function resetPhoneIdle() { /* audience build: no auto-reload while reading */ }
+    ['pointerdown', 'touchstart', 'click', 'touchmove'].forEach(function (ev) { document.addEventListener(ev, resetPhoneIdle, { passive: true }); });
+    resetPhoneIdle();
+    var beginBtn = document.getElementById('beginBtn');
+    // WebSocket → send phase actions (1..4) to the main screen.
+    var ws = null;
+    // A genuine phone refresh restarts the computer too — but the 60s idle auto-reload must NOT
+    // (that would keep resetting the scene's idle timer and block the attract/autoloop).
+    var autoReloaded = false; try { autoReloaded = sessionStorage.getItem('autoReload') === '1'; sessionStorage.removeItem('autoReload'); } catch (e) {}
+    var firstConnect = true;
+    // ?demo=1 → this controller is the phone-shaped window INSIDE the app, so it is (re)born with
+    // the app itself. It must never ask for the hard relaunch: it would reconnect and ask again,
+    // restarting the app forever.
+    var isDemo = params.has('demo');
+    function wsConnect() { /* audience build: no performer to connect to */ }
+    wsConnect();
+    function sendAction(a) { /* audience build: no-op */ }
+    // ---- Phase-H story: after "Let's Begin" the intro clears and story fragments reveal one
+    // per tap; every tap also drops a favicon ball on the main screen (action '1'). ----
+    // ---- Phase text + interaction (H drops balls; T/M/L scroll the portals) ----
+    var story = document.getElementById('story');
+    var tapzone = document.getElementById('tapzone');
+    var storyMode = false;
+    var currentPhase = null, phaseIdx = 0;
+    var PHASE_TEXT = { H: [], T: [], M: [], L: [] };
+    // Single source of truth: the shared phase-text.json (also read by the scene).
+    fetch("./phase-text.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
+      ["H","T","M","L"].forEach(function (k) { if (d[k]) PHASE_TEXT[k] = d[k]; });
+      /* audience build */;
+    }).catch(function () {});
+    function clearStory() { while (story.firstChild) story.removeChild(story.firstChild); }
+    function revealLine() {
+      var frags = PHASE_TEXT[currentPhase] || [];
+      if (phaseIdx < frags.length) {
+        var p = document.createElement('p');
+        p.textContent = frags[phaseIdx];
+        story.appendChild(p);
+        requestAnimationFrame(function () { p.classList.add('show'); });
+        phaseIdx++;
+      }
+    }
+    function sendScroll(d) { /* audience build: no-op */ }
+    // Push the per-phase text to the scene so its popup/story headers show the same words.
+    function sendAllText() {
+      if (!ws || ws.readyState !== 1) return;
+      ['T', 'M', 'L'].forEach(function (ph) {
+        if (PHASE_TEXT[ph] && PHASE_TEXT[ph].length) ws.send(JSON.stringify({ type: 'settext', phase: ph, lines: PHASE_TEXT[ph] }));
+      });
+    }
+    // each press: reveal the next line + the phase's action (H = drop a ball, T/M/L = scroll the portals)
+    function onPress() {
+      try { if (navigator.vibrate) navigator.vibrate(12); } catch (e) {}
+      revealLine();
+      if (currentPhase === 'H') sendAction('1');
+      else sendScroll(150);
+    }
+
+    // chapter footer - @h|hide ... tap the WORD to advance to the next chapter
+    var chapterbar = document.getElementById('chapterbar');
+    var chapLeft = document.getElementById('chapLeft');
+    var chapRight = document.getElementById('chapRight');
+    var CHAPTERS = {
+      H: { mark: '@h', word: 'hide', next: 'T' },
+      T: { mark: '@t', word: 'through', next: 'M' },
+      M: { mark: '@m', word: 'model', next: 'L' },
+      L: { mark: '@l', word: 'lies', next: null }
+    };
+    var PHASE_KEY = { H: '1', T: '2', M: '3', L: '4' };
+    function setChapter(id) {
+      var c = CHAPTERS[id]; if (!c) return;
+      chapLeft.textContent = c.mark; chapRight.textContent = c.word;
+      chapterbar.classList.add('on');
+    }
+    function enterPhase(id) {
+      currentPhase = id; phaseIdx = 0;
+      clearStory();
+      tScroll = 0; tLineEl = null;                        // reset the proportional text reveal
+      swiping = false; swipeAccum = 0; lastToggle = 0; lscroll = false;   // reset M swipe / L scroll state
+      structSent = false; if (id !== 'L') hideStructure();                 // structure only at the end of L
+      setChapter(id);
+      sendAction(PHASE_KEY[id]);     // switch the main screen to this phase
+      if (id === 'T') setTimeout(function () { sendAction('0'); }, 300);   // balls fall into the hole
+    }
+    // Tap "lies" (last chapter) → CLOSE the whole piece: fade the text/structure out, close the
+    // folder back to the tilting book, and reset the computer to phase 1.
+    function closeExperience() {
+      // freeze interaction for the close
+      storyMode = false; currentPhase = null; phaseIdx = 0; structSent = false;
+      swiping = false; lscroll = false; swipeAccum = 0; lastToggle = 0; tScroll = 0; tLineEl = null;
+      tapzone.classList.remove('on'); beginBtn.classList.remove('fired');
+      // 1) the 3D MODEL fades out first  (t = 0, ~1s)
+      hideStructure();
+      // 2) THEN the text fades out  (t = 1s)
+      setTimeout(function () {
+        story.classList.remove('on');
+        chapterbar.classList.remove('on');
+        // 3) THEN the grey un-papers to the folder colour and the folder CLOSES; computer resets  (t = 2s)
+        setTimeout(function () {
+          pagebg.classList.remove('on');
+          unpaper();
+          opened = false;
+          sendAction('reset');
+          setTimeout(function () { clearStory(); reader.style.display = ''; }, 1200);
+        }, 1000);
+      }, 1000);
+    }
+    function startStory() {
+      if (storyMode) return;
+      storyMode = true;
+      reader.classList.remove('on');
+      setTimeout(function () {
+        reader.style.display = 'none';
+        story.classList.add('on');
+        tapzone.classList.add('on');
+        enterPhase('H');
+        revealLine();                // first fragment right after "Let's Begin"
+      }, 700);
+    }
+    beginBtn.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      beginBtn.classList.add('fired');
+      startStory();
+    });
+    // Phase H — discrete tap anywhere on the canvas: one line + one ball
+    tapzone.addEventListener('click', function () {
+      if (currentPhase === 'H') onPress();
+    });
+    // Phase T/M/L — PRESS AND HOLD anywhere. Scroll ramps exponentially (slow/heavy -> fast/smooth);
+    // releasing blocks the portals; pressing again restarts the curve. Text fades in with the portals.
+    var holding = false, holdStart = 0, holdRAF = 0;
+    var HOLD_DELAY = 0.5;                                  // load buffer before the portal moves
+    var HOLD_A = 1.2, HOLD_TAU = 3.4, HOLD_MAX = 42;       // very gentle ramp, low top speed → portals have time to appear
+    var PER_LINE = 900;                                    // portal-scroll units to fully fade in one line (faster text)
+    var T_TEXT_BASE = 5;                                   // Phase T: steady text pace, independent of the slow portal speed
+    var tScroll = 0, tLineEl = null, tLineStart = 0, structSent = false;
+    // text fades in DIRECTLY proportional to portal movement (each line's opacity = how far the
+    // portals have travelled through its span), so text and portals rise together.
+    function updateReveal() {
+      var frags = PHASE_TEXT[currentPhase] || [];
+      if (phaseIdx >= frags.length) return;
+      if (!tLineEl) {
+        tLineEl = document.createElement('p');
+        tLineEl.textContent = frags[phaseIdx];
+        tLineEl.style.opacity = '0';
+        tLineEl.style.transition = 'none';                // opacity driven by scroll, not a timer
+        story.appendChild(tLineEl);
+        tLineStart = tScroll;
+      }
+      var frac = Math.min(1, (tScroll - tLineStart) / PER_LINE);
+      if (currentPhase === 'M') {
+        var off = (window.innerWidth || 420) + 60;
+        tLineEl.style.opacity = '1';                                                   // solid text riding in
+        tLineEl.style.transform = 'translateX(' + (-(1 - frac) * off).toFixed(1) + 'px)';   // from OFF-SCREEN LEFT -> settle at 0
+      } else if (currentPhase === 'L') {
+        tLineEl.style.opacity = frac.toFixed(3);
+        tLineEl.style.transform = 'translateY(' + ((1 - frac) * 46).toFixed(1) + 'px)';   // rise UP from below as you scroll
+      } else {
+        tLineEl.style.opacity = frac.toFixed(3);                                       // T/H: fade in
+      }
+      if (frac >= 1) {
+        tLineEl = null; phaseIdx++;
+        // end of L: once the last block lands, the whole text scrolls UP and out, THEN the model glows in
+        if (currentPhase === 'L' && phaseIdx >= frags.length && !structSent) { structSent = true; revealStructureAfterText(); }
+      }
+    }
+    // End of L: let the accumulated text scroll up and fade away first, then reveal the wireframe model.
+    function revealStructureAfterText() {
+      story.style.transition = 'transform 1.6s cubic-bezier(0.4,0,0.2,1), opacity 1.4s ease';
+      story.style.transform = 'translateY(-72vh)';       // all the text rises up and off the top
+      story.style.opacity = '0';
+      setTimeout(function () {
+        clearStory();                                    // drop the scrolled-out text
+        story.style.transition = 'none'; story.style.transform = 'none'; story.style.opacity = '';
+        showStructure();                                 // model glows in on the now-empty page
+      }, 1650);
+    }
+    // Phase M — ONE line per swipe gesture; it slides in from off-screen left and settles.
+    function mRevealLine() {
+      var frags = PHASE_TEXT['M'] || [];
+      if (phaseIdx >= frags.length) return;
+      var p = document.createElement('p');
+      p.textContent = frags[phaseIdx];
+      var off = (window.innerWidth || 420) + 60;
+      p.style.opacity = '1';
+      p.style.transition = 'transform 1s cubic-bezier(0.16,1,0.3,1)';               // smooth, slow glide in
+      p.style.transform = 'translateX(' + (-off) + 'px)';                          // off-screen left
+      story.appendChild(p);
+      requestAnimationFrame(function () { p.style.transform = 'translateX(0)'; });   // slide in left -> right
+      phaseIdx++;
+    }
+
+    // ---- End of L: green-fluo wireframe of the site's ACTUAL architecture — the parallelepiped
+    // box (1080x1920x1080) with the real 15deg inscribed square-spiral funnelling down (the tunnel).
+    // Glows like the text and slowly rotates on its vertical axis. Renders on THIS phone. ----
+    var structRenderer = null, structScene = null, structCam = null, structGroup = null, structF = 3.0;
+    function buildStructure(group, mat) {
+      var V = function (x, y, z) { return new THREE.Vector3(x, y, z); };
+      function line(pts) { group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat)); }
+      function seg(a, b) { line([a, b]); }
+      var HW = 1, HD = 1, HH = 1.78;                 // box proportions W:H:D = 1080:1920:1080
+      var c = [];
+      for (var sy = -1; sy <= 1; sy += 2) for (var sx = -1; sx <= 1; sx += 2) for (var sz = -1; sz <= 1; sz += 2) c.push(V(sx * HW, sy * HH, sz * HD));
+      function ci(iy, ix, iz) { return iy * 4 + ix * 2 + iz; }
+      for (var ix = 0; ix < 2; ix++) for (var iz = 0; iz < 2; iz++) seg(c[ci(0, ix, iz)], c[ci(1, ix, iz)]);   // verticals
+      for (var iy = 0; iy < 2; iy++) { seg(c[ci(iy,0,0)],c[ci(iy,0,1)]); seg(c[ci(iy,0,1)],c[ci(iy,1,1)]); seg(c[ci(iy,1,1)],c[ci(iy,1,0)]); seg(c[ci(iy,1,0)],c[ci(iy,0,0)]); }
+      var STEP = Math.PI / 12, R = 1 / (Math.cos(STEP) + Math.sin(STEP)), STEPS = 26;   // real 15deg inscribe
+      function sq(h, y, ang) {
+        var cc = Math.cos(ang), ss = Math.sin(ang), b = [[-h,-h],[h,-h],[h,h],[-h,h]], cor = [];
+        for (var i = 0; i < 4; i++) cor.push(V(b[i][0]*cc - b[i][1]*ss, y, b[i][0]*ss + b[i][1]*cc));
+        line([cor[0], cor[1], cor[2], cor[3], cor[0]]);
+        return cor;
+      }
+      var prev = null;
+      for (var k = 0; k < STEPS; k++) {
+        var cor = sq(HW * Math.pow(R, k), HH - k * (2 * HH / (STEPS - 1)), k * STEP);   // funnel down, rotating
+        if (prev) for (var j = 0; j < 4; j++) seg(prev[j], cor[j]);                     // wind the walls
+        prev = cor;
+      }
+    }
+    function ensureStructure() {
+      if (structRenderer || typeof THREE === 'undefined') return;
+      var cv = document.createElement('canvas');
+      cv.id = 'structCanvas';
+      cv.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:50;opacity:0;pointer-events:none;'
+        + 'transition:opacity 1s ease;'
+        + 'filter:drop-shadow(0 0 2px rgba(0,0,0,0.9)) drop-shadow(0 0 9px rgba(0,0,0,0.55)) drop-shadow(0 0 20px rgba(0,0,0,0.35));';   // black glow / halo
+      document.body.appendChild(cv);
+      structRenderer = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: true });
+      structRenderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+      structRenderer.setSize(window.innerWidth, window.innerHeight);
+      structRenderer.setClearColor(0x000000, 0);
+      structScene = new THREE.Scene();
+      var a = window.innerWidth / window.innerHeight;
+      structCam = new THREE.OrthographicCamera(-structF * a, structF * a, structF, -structF, -100, 100);
+      structCam.position.set(4.5, 3.4, 4.5); structCam.lookAt(0, 0, 0);
+      var mat = new THREE.LineBasicMaterial({ color: 0x1c1d21, transparent: true, opacity: 0.9, depthWrite: false });   // dark ink, like the text
+      structGroup = new THREE.Group();
+      buildStructure(structGroup, mat);
+      structScene.add(structGroup);
+      (function loop() { requestAnimationFrame(loop); if (structGroup) structGroup.rotation.y += 0.0035; structRenderer.render(structScene, structCam); })();
+      window.addEventListener('resize', function () {
+        if (!structRenderer) return;
+        structRenderer.setSize(window.innerWidth, window.innerHeight);
+        var ar = window.innerWidth / window.innerHeight;
+        structCam.left = -structF * ar; structCam.right = structF * ar; structCam.top = structF; structCam.bottom = -structF; structCam.updateProjectionMatrix();
+      });
+    }
+    function showStructure() { ensureStructure(); var cv = document.getElementById('structCanvas'); if (cv) cv.style.opacity = '1'; }
+    function hideStructure() { var cv = document.getElementById('structCanvas'); if (cv) cv.style.opacity = '0'; }
+    function holdLoop() {
+      if (!holding) return;
+      var now = performance.now();
+      var t = (now - holdStart) / 1000;                    // seconds held
+      var te = Math.max(0, t - HOLD_DELAY);                // brief load buffer
+      var speed = Math.min(HOLD_MAX, HOLD_A * (Math.exp(te / HOLD_TAU) - 1));  // 0 -> fast, exponential
+      sendScroll(speed);
+      tScroll += T_TEXT_BASE + speed * 0.3;                // steady text pace even while the portals crawl
+      updateReveal();
+      holdRAF = requestAnimationFrame(holdLoop);
+    }
+    function startHold() {
+      if (holding || !currentPhase || currentPhase === 'H') return;
+      holding = true; holdStart = performance.now();
+      holdLoop();
+    }
+    function stopHold() {
+      if (!holding) return;
+      holding = false;
+      if (holdRAF) cancelAnimationFrame(holdRAF);
+    }
+    // Phase M — SWIPE. Dragging turns the IG story (scroll), fades the text in proportionally,
+    // and fluctuates the image between depth and depth-transparent (every M_TOGGLE px of swipe).
+    var swiping = false, swipePrev = 0, swipeAccum = 0, lastToggle = 0;
+    var M_SCROLL_K = 4.5;      // swipe px -> scroll delta (turns the story)
+    var M_TEXT_K = 8;          // swipe px -> text-reveal units
+    var M_TOGGLE = 90;         // swipe px between depth <-> depth-transparent flips
+    // Phase L (lies) — vertical SCROLL: drag to dive into the tunnel; text rises up from below.
+    var lscroll = false, lPrev = 0;
+    var L_SCROLL_K = 1.1;      // drag px -> scroll delta (tunnel dive)
+    var L_TEXT_K = 8;          // drag px -> text-reveal units (one short swipe ≈ one full block, appears on 1st scroll)
+    tapzone.addEventListener('pointerdown', function (e) {
+      if (currentPhase === 'M') { swiping = true; swipePrev = e.clientX; mRevealLine(); }   // ONE text line per swipe
+      else if (currentPhase === 'L') { lscroll = true; lPrev = e.clientY; }                 // scroll-dive
+      else startHold();        // T press-and-hold
+    });
+    tapzone.addEventListener('pointermove', function (e) {
+      if (currentPhase === 'M' && swiping) {
+        var dx = e.clientX - swipePrev; swipePrev = e.clientX;   // LEFT ↔ RIGHT swipe
+        sendScroll(dx * M_SCROLL_K);                        // swipe right = advance the story
+        swipeAccum += Math.abs(dx);
+        if (swipeAccum - lastToggle >= M_TOGGLE) { sendAction('mDepthToggle'); lastToggle = swipeAccum; }   // depth flicker
+      } else if (currentPhase === 'L' && lscroll) {
+        var dy = e.clientY - lPrev; lPrev = e.clientY;       // vertical scroll
+        sendScroll(-dy * L_SCROLL_K);                        // drag up = dive forward into the tunnel
+        tScroll += Math.abs(dy) * L_TEXT_K; updateReveal();  // text rises from below as you scroll
+      }
+    });
+    tapzone.addEventListener('pointerup', function () { stopHold(); swiping = false; lscroll = false; });
+    tapzone.addEventListener('pointercancel', function () { stopHold(); swiping = false; lscroll = false; });
+    tapzone.addEventListener('pointerleave', function () { stopHold(); swiping = false; lscroll = false; });
+    // iOS Safari still tries to SCROLL/rubber-band the page on a drag even with touch-action:none —
+    // block it so the gesture is read as our swipe, not a page scroll.
+    document.addEventListener('touchmove', function (e) { if (storyMode) e.preventDefault(); }, { passive: false });
+    // tap the chapter word (hide -> through -> model -> lies) to advance chapters
+    chapRight.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      var c = CHAPTERS[currentPhase];
+      if (!c) return;
+      if (c.next) enterPhase(c.next);
+      else closeExperience();               // "lies" (last chapter) → close & reset the whole piece
+    });
+
+    var REST = 90;   // γ=0 → 90° = folder PERPENDICULAR (slim bar). Tilt reveals a face. (unchanged)
+    var tgt = params.has('a') ? +params.get('a') : REST;
+    var cur = tgt;
+    // door model: cur = tilt angle (rest 0). The whole folder never rotates (nothing wraps);
+    // instead tilt cracks ONE door open and a tap opens BOTH.
+    folder.style.transform = 'none';
+    var opened = params.has('open');   // ?open forces the fully-open spread (debug/preview)
+    var openAmt = 0;
+    // a few seconds after the book opens, the covers turn to paper (see #folder.paged CSS)
+    var pageTimer = null;
+    var pagebg = document.getElementById('pagebg');
+    function schedulePaper() { clearTimeout(pageTimer); pageTimer = setTimeout(function () { fitReader(); folder.classList.add('paged'); pagebg.classList.add('on'); reader.classList.add('on'); }, 1400); }
+    function unpaper() { clearTimeout(pageTimer); folder.classList.remove('paged'); }
+    if (opened) schedulePaper();
+
+    // ---------- Phase-1 sphere (verbatim port of phases/h/overlay.html), one Google orb ----------
+    // The orb's GROWTH is what forces the folder open: orbRadius is driven by openAmt below.
+    var orbRadius = 0;
+    var ORB_ENABLED = false;   // orb disabled for now — folder just opens like a book on tap
+    (function initOrb() {
+      if (!ORB_ENABLED) return;
+      if (!window.THREE) return;
+      var T = window.THREE;
+      var renderer = new T.WebGLRenderer({ alpha: true, antialias: true });
+      renderer.setPixelRatio(window.devicePixelRatio || 1);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setClearColor(0x000000, 0);
+      renderer.domElement.id = 'orbcanvas';
+      document.body.appendChild(renderer.domElement);
+
+      var scene = new T.Scene(), camera;
+      function setCam() { camera = new T.OrthographicCamera(0, window.innerWidth, 0, window.innerHeight, -3000, 3000); camera.position.z = 1000; }
+      setCam();
+      scene.add(new T.AmbientLight(0xffffff, 0.6));
+      var dir = new T.DirectionalLight(0xffffff, 1.05); dir.position.set(-0.5, -0.85, 0.9); scene.add(dir);
+      var fill = new T.DirectionalLight(0x99bbff, 0.25); fill.position.set(0.6, 0.5, 0.4); scene.add(fill);
+
+      var GEO = new T.SphereGeometry(1, 40, 30), PLANE = new T.PlaneGeometry(1, 1);
+
+      var ENV = (function () {
+        var c = document.createElement('canvas'); c.width = 512; c.height = 256;
+        var x = c.getContext('2d');
+        var g = x.createLinearGradient(0, 0, 0, 256);
+        g.addColorStop(0.00, '#0a1440'); g.addColorStop(0.20, '#3f7bd8'); g.addColorStop(0.38, '#eaf3ff');
+        g.addColorStop(0.50, '#bfe2ff'); g.addColorStop(0.63, '#5aa8ff'); g.addColorStop(0.80, '#f0f6ff'); g.addColorStop(1.00, '#0a1030');
+        x.fillStyle = g; x.fillRect(0, 0, 512, 256);
+        x.globalCompositeOperation = 'screen';
+        for (var i = 0; i < 4; i++) {
+          var px = 70 + i * 135, py = 40 + (i % 2) * 170;
+          var gx = x.createRadialGradient(px, py, 0, px, py, 130);
+          gx.addColorStop(0, 'rgba(255,255,255,0.55)'); gx.addColorStop(1, 'rgba(255,255,255,0)');
+          x.fillStyle = gx; x.fillRect(0, 0, 512, 256);
+        }
+        var tex = new T.CanvasTexture(c); tex.mapping = T.EquirectangularReflectionMapping; return tex;
+      })();
+      var SHADOW_TEX = (function () {
+        var c = document.createElement('canvas'); c.width = c.height = 64; var x = c.getContext('2d');
+        var g = x.createRadialGradient(32, 32, 2, 32, 32, 30);
+        g.addColorStop(0, 'rgba(0,0,0,0.5)'); g.addColorStop(0.55, 'rgba(0,0,0,0.24)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+        x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new T.CanvasTexture(c);
+      })();
+      function buildGlowTex(rayCount) {
+        var S = 256, R = S / 2; var c = document.createElement('canvas'); c.width = c.height = S; var x = c.getContext('2d');
+        var g = x.createRadialGradient(R, R, 2, R, R, R);
+        g.addColorStop(0.00, 'rgba(255,255,255,0)'); g.addColorStop(0.43, 'rgba(255,255,255,0)');
+        g.addColorStop(0.47, 'rgba(255,255,255,0.98)'); g.addColorStop(0.60, 'rgba(255,255,255,0.62)');
+        g.addColorStop(0.80, 'rgba(255,255,255,0.26)'); g.addColorStop(1.00, 'rgba(255,255,255,0)');
+        x.fillStyle = g; x.fillRect(0, 0, S, S);
+        x.save(); x.translate(R, R); x.globalCompositeOperation = 'lighter';
+        var ri = R * 0.47, ro = R * 0.98, len = ro * 0.95, alpha = 0.06;
+        var wIn = (Math.PI * 2 / rayCount) * 0.22, wOut = wIn * 0.25;
+        for (var i = 0; i < rayCount; i++) {
+          var a = i / rayCount * Math.PI * 2;
+          var p = function (rad, ang) { return [Math.cos(ang) * rad, Math.sin(ang) * rad]; };
+          var A = p(ri, a - wIn), B = p(ri, a + wIn), C = p(len, a + wOut), D = p(len, a - wOut);
+          var gr = x.createLinearGradient(Math.cos(a) * ri, Math.sin(a) * ri, Math.cos(a) * len, Math.sin(a) * len);
+          gr.addColorStop(0, 'rgba(255,255,255,' + alpha + ')'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+          x.fillStyle = gr; x.beginPath();
+          x.moveTo(A[0], A[1]); x.lineTo(B[0], B[1]); x.lineTo(C[0], C[1]); x.lineTo(D[0], D[1]); x.closePath(); x.fill();
+        }
+        x.restore(); return new T.CanvasTexture(c);
+      }
+      var GLOW_SOFT = (function () {
+        var c = document.createElement('canvas'); c.width = c.height = 256; var x = c.getContext('2d');
+        var g = x.createRadialGradient(128, 128, 2, 128, 128, 128);
+        g.addColorStop(0.00, 'rgba(255,255,255,0.85)'); g.addColorStop(0.40, 'rgba(255,255,255,0.40)');
+        g.addColorStop(0.75, 'rgba(255,255,255,0.12)'); g.addColorStop(1.00, 'rgba(255,255,255,0)');
+        x.fillStyle = g; x.fillRect(0, 0, 256, 256); return new T.CanvasTexture(c);
+      })();
+      function dominantColor(img) {
+        var c = [120, 200, 90];
+        try {
+          var s = document.createElement('canvas'); s.width = s.height = 32; var sc = s.getContext('2d'); sc.drawImage(img, 0, 0, 32, 32);
+          var d = sc.getImageData(0, 0, 32, 32).data; var r = 0, g = 0, b = 0, w = 0;
+          for (var i = 0; i < d.length; i += 4) {
+            var al = d[i + 3]; if (al < 128) continue;
+            var R = d[i], G = d[i + 1], B = d[i + 2], mx = Math.max(R, G, B), mn = Math.min(R, G, B);
+            if (mx > 238 && mn > 238) continue; if (mx < 18) continue;
+            var wt = 0.25 + (mx - mn) / (mx || 1); r += R * wt; g += G * wt; b += B * wt; w += wt;
+          }
+          if (w > 0) c = [Math.round(r / w), Math.round(g / w), Math.round(b / w)];
+        } catch (e) {}
+        return c;
+      }
+      function buildTexture(img) {
+        var c = dominantColor(img);
+        var t = document.createElement('canvas'); t.width = 512; t.height = 256; var x = t.getContext('2d');
+        x.fillStyle = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; x.fillRect(0, 0, 512, 256);
+        var fw = 140, fh = 140, cy = 128;
+        for (var k = 0; k < 2; k++) { var cx = 128 + 256 * k; x.drawImage(img, cx - fw / 2, cy - fh / 2, fw, fh); }
+        var tex = new T.CanvasTexture(t); tex.anisotropy = 4; return tex;
+      }
+
+      var orb = null, spin = 0;
+      var img = new Image(); img.crossOrigin = 'anonymous';
+      img.onload = function () { make(buildTexture(img), dominantColor(img)); };
+      img.onerror = function () { make(null, [66, 133, 244]); };
+      img.src = '/phases/h/google.png';
+      function make(tex, col) {
+        var mat = new T.MeshPhysicalMaterial({ map: tex, color: 0xffffff, metalness: 0.0, roughness: 0.42, clearcoat: 1.0, clearcoatRoughness: 0.12, envMap: ENV, envMapIntensity: 0.7 });
+        var mesh = new T.Mesh(GEO, mat); mesh.renderOrder = 2; scene.add(mesh);
+        var shadow = new T.Mesh(PLANE, new T.MeshBasicMaterial({ map: SHADOW_TEX, transparent: true, depthWrite: false, depthTest: false, side: T.DoubleSide })); shadow.renderOrder = 0; scene.add(shadow);
+        var warmCol = new T.Color('rgb(' + col[0] + ',' + col[1] + ',' + col[2] + ')');
+        var outer = new T.Mesh(PLANE, new T.MeshBasicMaterial({ map: GLOW_SOFT, transparent: true, depthWrite: false, depthTest: false, side: T.DoubleSide, color: warmCol, opacity: 0.45 })); outer.renderOrder = 0; scene.add(outer);
+        var glow = new T.Mesh(PLANE, new T.MeshBasicMaterial({ map: buildGlowTex(24), transparent: true, depthWrite: false, depthTest: false, side: T.DoubleSide, color: warmCol, opacity: 1.0 })); glow.renderOrder = 1; scene.add(glow);
+        orb = { mesh: mesh, shadow: shadow, glow: glow, outer: outer };
+      }
+      window.addEventListener('resize', function () { renderer.setSize(window.innerWidth, window.innerHeight); setCam(); });
+      (function render() {
+        if (orb) {
+          var cx = window.innerWidth / 2, cy = window.innerHeight / 2, r = orbRadius, vis = r > 0.5;
+          orb.mesh.visible = orb.shadow.visible = orb.glow.visible = orb.outer.visible = vis;
+          if (vis) {
+            spin += 0.006;
+            orb.mesh.scale.setScalar(r); orb.mesh.position.set(cx, cy, 0); orb.mesh.rotation.y = spin;
+            orb.shadow.position.set(cx + r * 0.4, cy + r * 0.55, -8); orb.shadow.scale.set(r * 2.6, r * 2.6, 1);
+            orb.glow.position.set(cx, cy, -6); orb.glow.scale.set(r * 4.4, r * 4.4, 1);
+            orb.outer.position.set(cx, cy, -7); orb.outer.scale.set(r * 6, r * 6, 1);
+          }
+        }
+        renderer.render(scene, camera); requestAnimationFrame(render);
+      })();
+    })();
+
+    if (!fixed) {
+      function onOri(e) {
+        if (e.gamma == null) return;
+        var g = e.gamma || 0;   // γ=0 → 90° (perpendicular bar); tilt reveals a face
+        tgt = clamp(REST - g * 1.6, 10, 170);
+      }
+      var tiltAsked = false;
+      async function enableTilt() {
+        if (tiltAsked) return; tiltAsked = true;   // iOS needs a user gesture — fire once on first tap
+        try {
+          if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            await DeviceMotionEvent.requestPermission();
+          }
+          if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            var s = await DeviceOrientationEvent.requestPermission();
+            if (s !== 'granted') return;
+          }
+          window.addEventListener('deviceorientation', onOri);
+        } catch (err) {}
+      }
+
+      var dragging = false, px = 0, moved = false;
+      document.addEventListener('touchstart', function (e) { dragging = true; moved = false; px = e.touches[0].clientX; }, { passive: true });
+      document.addEventListener('touchmove', function (e) {
+        if (!dragging) return;
+        var dx = e.touches[0].clientX - px;
+        if (Math.abs(dx) > 5) moved = true;
+        tgt = clamp(tgt + dx * 0.4, 10, 170);
+        px = e.touches[0].clientX;
+      }, { passive: true });
+      document.addEventListener('touchend', function () { dragging = false; });
+
+      // First tap enables tilt (the gesture iOS requires) so the closed folder starts tilting;
+      // the SECOND tap opens the folder.
+      document.addEventListener('click', function (e) {
+        if (e.target === beginBtn) return;
+        if (moved) { moved = false; return; }
+        if (!tiltAsked) { enableTilt(); return; }   // 1st tap → tilt on (folder tilts)
+        if (opened) return;                          // already open → reader is showing
+        opened = true; schedulePaper();              // 2nd tap → open (grey pages + text fade in)
+      });
+    }
+
+    // ---- visual loop (runs in BOTH modes) ----
+    // Each door is independent: RIGHT door −90°(edge-on)→0°(flat right), LEFT door +90°→0°(flat left).
+    // Tilt cracks ONE door (tilt right → HTML, tilt left → full title); a tap opens BOTH fully.
+    (function loop() {
+      cur += (tgt - cur) * 0.14;
+      openAmt += ((opened ? 1 : 0) - openAmt) * 0.12;
+
+      // OPEN like a book: each cover swings around the central spine, so the dark cover
+      // (edge 1) sweeps out to the RIGHT border and the light cover (edge 2) to the LEFT.
+      // Their free edges start on their own side (+4.5 / −4.5), so they never cross.
+      // The folder eases to perpendicular (90°) so the spine stays centred as it opens.
+      var swing = openAmt * 52.5;                        // 4.5° (closed splay) → 57° (edge at border)
+      backCover.style.transform  = 'rotateY(' + ( 4.5 + swing) + 'deg)';   // edge 1 → RIGHT border
+      frontCover.style.transform = 'rotateY(' + (-4.5 - swing) + 'deg)';   // edge 2 → LEFT border
+      folder.style.transform = 'rotateY(' + (cur * (1 - openAmt) + 90 * openAmt) + 'deg)';
+
+      spineH.style.opacity = spineF.style.opacity = (1 - openAmt);   // titles fade as it opens
+      if (ORB_ENABLED) orbRadius = openAmt * 78;                     // orb growth (disabled for now)
+
+      requestAnimationFrame(loop);
+    })();
+  </script>
+</body>
+</html>
