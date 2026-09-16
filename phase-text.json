@@ -10,7 +10,7 @@
     "The browser is no longer only a window to the web. It becomes a host for the model. The search engine no longer retrieves information. It generates it. The folder no longer stores your files. It stores the model. Your folders become its infrastructure.",
     "Google just pulled off the biggest heist in internet history, and nobody is calling it out.",
     "Everything is linked, but users stop clicking.",
-    "Their query is answered in a few lines of text at the top of the page. Concise. Quick. The hyperlink quietly collapses.",
+    "Their query is now answered in a few lines of text at the top of the search page. AI Overview. Concise. Quick. The hyperlink quietly collapses.",
     "The content is still there, read and used. The traffic simply disappears.",
     "Some publishers report traffic drops of up to 60% overnight.",
     "Google trained on your words for free. Now it resells them, as the answer no longer belongs to the page that produced it. It belongs to the model.",
@@ -30,24 +30,28 @@
     "Moments where the generative mesh fails to wrap the world.",
     "Moments where statistical renderings reveal what the model does not yet know.",
     "AI-generated images are therefore better understood as statistical renderings than representations.",
-    "They synthesize recurring visual features into probable images, converging toward what Hito Steyerl describes as the “mean image”: operating as exclusionary standards that reproduce societal biases, the rise of generic visual content, and the probabilistic rendering of the visual status quo.",
-    "On Google Help forums, only a few weeks ago, users pointed out that in the United States some sensitive sites are no longer hidden by blur, but replaced with synthetically generated scenery.",
+    "They synthesize recurring visual features into probable images, converging toward mean images.",
+    "In July 2026, when Google integrated its AI Nano Banana image-generation model into Google Earth, users could “type whatever you want to see” and “virtually reimagine anywhere in the world”.",
+    "People immediately began to render violence. Explosions. Floods. Destruction. War.",
+    "The imagined world quickly converged toward familiar images of catastrophe. Mean images became mean.",
+    "In one update, Google Earth moves from a mechanism of truth used in OSINT investigations to an interface where reality and fabrication are rendered through the same biased machine.",
+    "On Google Help forums, only a few weeks before the deployment of this Google AI satellite feature, users pointed out that in the United States some sensitive sites are no longer blurred, but replaced with synthetically generated scenery.",
     "The pursuit of realism introduces a misalignment between the world, the image we want to see, the technologies that capture it, and the technologies that reconstruct it into a computational replica of reality."
   ],
   "M": [
     "A lot of narratives about technology assume that either we control the machine, or the machine controls us.",
     "In 2011, Google Shoot View was released. A browser plug-in transformed Google's Street View into a first-person shooter, using Google's archive of 360-degree street-level photography as the playable environment. The world remained exactly the same. Only the interface changed.",
-    "In 2026, Google released its first World Model, a real-time, action-controllable system capable of generating interactive ludic environments from language prompts. In June 2026, Google introduced the Grounding extension: a World Model nested within the reality of Street View and the vast network of Google datasets collected over the last two decades.",
+    "In 2026, Google released its first World Model, Genie, a real-time, action-controllable system capable of generating interactive ludic environments from language prompts. In June 2026, Google introduced the Grounding extension: a World Model nested within the reality of Street View and the vast network of Google datasets collected over the last two decades.",
     "Large language models extended the logic of the web by modeling language itself. They predict words from previous words, producing coherent text without representing the physical world.",
     "As AI researchers often point out, LLMs are “wordcels, not shape rotators.” Their knowledge of the world is mediated through language rather than geometry, spatial reasoning, or physical interaction.",
     "Google describes this next frontier as Spatial Intelligence. Rather than predicting the next word, World Models predict the next state of an environment. The objective is no longer simply to generate language, but to simulate coherent worlds that respond to actions, persist through time, and remain physically consistent.",
     "The question remains how these models will be used, hidden within the ludic dimension of videogame environments while gradually expanding into everyday reality.",
     "Photographs become depth maps. Depth maps become meshes. Meshes become environments. Missing information is generated before it is observed. Reality becomes increasingly grounded through computation rather than documentation.",
-    "Understanding how these realities are constructed also means understanding how they can misbehave. In the United States, sensitive sites on Google Maps are increasingly replaced not with blur, but with synthetically generated scenery. The model does not simply hide information. It reconstructs it.",
+    "Understanding how these realities are constructed also means understanding how they can misbehave.",
     "Simulation depends on consistency. Prediction depends on repetition. The more frequently something appears, the easier it becomes to model. The exception remains the hardest thing to compute."
   ],
   "L": [
-    "The richness of the internet has always existed in its long tail. Millions of small websites, forgotten blogs, forums, personal archives, open repositories, and niche communities rarely appear in rankings, yet collectively sustain the informational diversity of the web. More than 90% of Google queries belong to this long tail, making its periphery the connective tissue of the internet rather than its margins.",
+    "The richness of the internet has always existed in its Long Tail. Millions of small websites, forgotten blogs, forums, personal archives, open repositories, and niche communities rarely appear in rankings, yet collectively sustain the informational diversity of the web. More than 90% of Google queries belong to this long tail, making its periphery the connective tissue of the internet rather than its margins.",
     "For decades, search engines functioned as portals into this archive. The promise was simple: every page could eventually be found. Visibility depended less on popularity than on the possibility of discovery.",
     "Today, this archive has acquired a different value.",
     "The way to train a model is data. The way to improve a model is more data.",
@@ -57,8 +61,9 @@
     "If access to the long tail of the web is reduced by design, future models become less diverse, increasingly dependent on bilateral agreements, proprietary datasets, and the infrastructures of the companies that already control access to information.",
     "The web was built on hyperlinks. Foundation models are built on datasets. The closure of one inevitably shapes the other.",
     "HTML connected documents. Scene Graphs connect objects. Both depend on relationships.",
-    "The long tail is not simply more information. It is more relationships. More exceptions. More ways for the graph to grow.",
+    "The Long Tail is not simply more information. It is more relationships. More exceptions. More ways for the graph to grow.",
     "Without them, the graph remains coherent. The model remains efficient. Reality becomes easier to compute.",
-    "Not because it becomes simpler. Because everything that resisted the model has been quietly hidden."
+    "Not because it becomes simpler.",
+    "Because everything that resisted the model has been quietly hidden."
   ]
 }
