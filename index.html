@@ -359,8 +359,10 @@
       }
       if (frac >= 1) {
         tLineEl = null; phaseIdx++;
-        // end of L: once the last block lands, the whole text scrolls UP and out, THEN the model glows in
-        if (currentPhase === 'L' && phaseIdx >= frags.length && !structSent) { structSent = true; revealStructureAfterText(); }
+        // End of L no longer reveals the model on its own — the performer calls it by
+        // tapping "lies" (see the chapterbar handler). Reaching the end of the text just
+        // leaves the page sitting there, so the reveal is a deliberate beat, not a side
+        // effect of having scrolled far enough.
       }
     }
     // End of L: let the accumulated text scroll up and fade away first, then reveal the wireframe model.
@@ -506,8 +508,12 @@
       ev.stopPropagation();
       var c = CHAPTERS[currentPhase];
       if (!c) return;
-      if (c.next) enterPhase(c.next);
-      else closeExperience();               // "lies" (last chapter) → close & reset the whole piece
+      if (c.next) { enterPhase(c.next); return; }
+      // "lies" is the last chapter, so its word is tapped twice, for two separate beats:
+      //   1st tap → the text rises off the page and the rotating model glows in
+      //   2nd tap → close & reset the whole piece
+      if (!structSent) { structSent = true; revealStructureAfterText(); return; }
+      closeExperience();
     });
 
     var REST = 90;   // γ=0 → 90° = folder PERPENDICULAR (slim bar). Tilt reveals a face. (unchanged)
